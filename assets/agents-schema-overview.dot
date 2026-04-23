@@ -1,58 +1,53 @@
-digraph AgentsSchemaOverview {
+digraph AgentsSchemaOverviewOption1 {
   rankdir=LR;
   graph [bgcolor="white", pad="0.2"];
   node [fontname="Helvetica", fontsize=12];
   edge [color="#475569", penwidth=1.2, arrowsize=0.8];
 
-  fivetran_provider [label="Fivetran\nprovider", shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#1f2937"];
-  dbt_provider [label="dbt\nprovider", shape=box, style="rounded,filled", fillcolor="#ecfeff", color="#1f2937"];
+  subgraph cluster_providers {
+    label="";
+    style="invis";
+    margin=50;
 
-  bi [label="BI", shape=box, style="rounded,filled", fillcolor="#fefce8", color="#1f2937"];
-  observability [label="Observability", shape=box, style="rounded,filled", fillcolor="#ecfccb", color="#1f2937"];
-  assistants [label="Assistants", shape=box, style="rounded,filled", fillcolor="#f1f5f9", color="#1f2937"];
+    fivetran_provider [label="Fivetran\nprovider", shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#1f2937"];
+    dbt_provider [label="dbt\nprovider", shape=box, style="rounded,filled", fillcolor="#ecfeff", color="#1f2937"];
+    other_providers [label="Other\nproviders", shape=box, style="rounded,filled", fillcolor="#f3f4f6", color="#1f2937"];
+  }
 
-  schema [
-    shape=ellipse,
-    color="#ea580c",
-    penwidth=1.5,
-    style="filled",
-    fillcolor="white",
-    margin="0.3,0.2",
-    label=<
-      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="14" CELLPADDING="0">
-        <TR>
-          <TD></TD>
-          <TD>
-            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#ea580c">
-              <TR><TD><B>ROOT</B></TD></TR>
-            </TABLE>
-          </TD>
-          <TD></TD>
-        </TR>
-        <TR>
-          <TD>
-            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#ea580c">
-              <TR><TD><B>FIVETRAN_SOURCES</B></TD></TR>
-            </TABLE>
-          </TD>
-          <TD></TD>
-          <TD>
-            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#ea580c">
-              <TR><TD><B>DBT_METRICS</B></TD></TR>
-            </TABLE>
-          </TD>
-        </TR>
-      </TABLE>
-    >
-  ];
+  subgraph cluster_schema {
+    label="";
+    style="rounded,dotted";
+    margin=20;
+    color="#ea580c";
+    penwidth=1.5;
 
-  { rank=same; fivetran_provider; dbt_provider; }
-  { rank=same; bi; observability; assistants; }
+    fivetran_sources [label="FIVETRAN_SOURCES", shape=box, style="filled", fillcolor="white", color="#ea580c"];
+    root [label="ROOT", shape=box, style="filled", fillcolor="white", color="#ea580c"];
+    dbt_metrics [label="DBT_METRICS", shape=box, style="filled", fillcolor="white", color="#ea580c"];
 
-  fivetran_provider -> schema;
-  dbt_provider -> schema;
+    { rank=same; fivetran_sources; dbt_metrics; }
 
-  schema -> bi;
-  schema -> observability;
-  schema -> assistants;
+    root -> fivetran_sources [dir=none, color="#ea580c", penwidth=1.2];
+    root -> dbt_metrics [dir=none, color="#ea580c", penwidth=1.2];
+  }
+
+  subgraph cluster_consumers {
+    label="";
+    style="invis";
+    margin=50;
+
+    bi [label="BI", shape=box, style="rounded,filled", fillcolor="#fefce8", color="#1f2937"];
+    observability [label="Observability", shape=box, style="rounded,filled", fillcolor="#ecfccb", color="#1f2937"];
+    assistants [label="Assistants", shape=box, style="rounded,filled", fillcolor="#f1f5f9", color="#1f2937"];
+  }
+  
+  compound=true;
+
+  fivetran_provider -> root [lhead=cluster_schema];
+  dbt_provider -> root [lhead=cluster_schema];
+  other_providers -> root [lhead=cluster_schema];
+
+  dbt_metrics -> bi [ltail=cluster_schema];
+  fivetran_sources -> assistants [ltail=cluster_schema];
+  fivetran_sources -> observability [ltail=cluster_schema];
 }
