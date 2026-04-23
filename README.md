@@ -4,6 +4,8 @@
 
 The Agents Schema is to lakehouses what `AGENTS.md` is to code repositories: a well-known location where tools, agents, and humans can discover what data exists, who owns it, and how to use it responsibly.
 
+![Agents Schema overview](assets/agents-schema-overview.png)
+
 ---
 
 ## Motivation

@@ -1,0 +1,58 @@
+digraph AgentsSchemaOverview {
+  rankdir=LR;
+  graph [bgcolor="white", pad="0.2"];
+  node [fontname="Helvetica", fontsize=12];
+  edge [color="#475569", penwidth=1.2, arrowsize=0.8];
+
+  fivetran_provider [label="Fivetran\nprovider", shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#1f2937"];
+  dbt_provider [label="dbt\nprovider", shape=box, style="rounded,filled", fillcolor="#ecfeff", color="#1f2937"];
+
+  bi [label="BI", shape=box, style="rounded,filled", fillcolor="#fefce8", color="#1f2937"];
+  observability [label="Observability", shape=box, style="rounded,filled", fillcolor="#ecfccb", color="#1f2937"];
+  assistants [label="Assistants", shape=box, style="rounded,filled", fillcolor="#f1f5f9", color="#1f2937"];
+
+  schema [
+    shape=ellipse,
+    color="#ea580c",
+    penwidth=1.5,
+    style="filled",
+    fillcolor="white",
+    margin="0.3,0.2",
+    label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="14" CELLPADDING="0">
+        <TR>
+          <TD></TD>
+          <TD>
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#ea580c">
+              <TR><TD><B>ROOT</B></TD></TR>
+            </TABLE>
+          </TD>
+          <TD></TD>
+        </TR>
+        <TR>
+          <TD>
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#ea580c">
+              <TR><TD><B>FIVETRAN_SOURCES</B></TD></TR>
+            </TABLE>
+          </TD>
+          <TD></TD>
+          <TD>
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#ea580c">
+              <TR><TD><B>DBT_METRICS</B></TD></TR>
+            </TABLE>
+          </TD>
+        </TR>
+      </TABLE>
+    >
+  ];
+
+  { rank=same; fivetran_provider; dbt_provider; }
+  { rank=same; bi; observability; assistants; }
+
+  fivetran_provider -> schema;
+  dbt_provider -> schema;
+
+  schema -> bi;
+  schema -> observability;
+  schema -> assistants;
+}
