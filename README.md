@@ -87,6 +87,36 @@ This is especially important for coding and development workflows. A tool helpin
 
 ---
 
+## Comparison to Related Concepts
+
+### Compared to `AGENTS.md`
+
+The analogy to `AGENTS.md` is useful, but the setting is different.
+
+- `AGENTS.md` is for code repositories; the Agents Schema is for warehouses and lakehouses
+- `AGENTS.md` is typically curated by developers in a repo; the Agents Schema is expected to be written to by multiple providers that share the same warehouse
+- `AGENTS.ROOT.description` is intentionally unstructured markdown, similar to `AGENTS.md`
+- beyond `AGENTS.ROOT`, the rest of the Agents Schema will often be more structured, because provider-contributed tables are meant to support machine-readable discovery and joins
+
+### Compared to `information_schema`
+
+The closest existing database analogy is `information_schema`.
+
+- both are meant to be discoverable from inside the database itself
+- the Agents Schema is self-documenting through `AGENTS.ROOT`, in the same spirit that `information_schema` exposes metadata from within the system
+- the main difference is extensibility: `information_schema` is a strong idea, but it is largely fixed by the warehouse provider and not designed as a shared extension surface for many metadata producers
+- you can think of `information_schema` as a pre-existing metadata surface from a single provider, while the Agents Schema allows many providers to effectively publish and share their own `information_schema`-like context in one place
+
+### Compared to MCP Servers
+
+MCP servers and the Agents Schema solve related but different problems.
+
+- the Agents Schema does not require separate authentication or a separate service boundary; it relies on the database access that providers and consumers already share
+- its scope is narrower: it provides context, but it is not an action interface
+- an MCP server can expose tools that take action, orchestrate workflows, or wrap external systems; the Agents Schema only publishes metadata inside the warehouse
+- specialized MCP servers are likely to be common consumers of the Agents Schema
+- those servers may cache metadata from the Agents Schema, or special-case known providers and well-known extensions when they want a richer or faster consumer experience
+
 ## Core: The `AGENTS` Schema
 
 All Agents Schema tables live in a schema named `AGENTS`. The schema name is fixed as `AGENTS`. This schema must be created by whoever administers the lakehouse. Write access should be limited to providers, read access should be granted as broadly as possible. Providers should not place highly sensitive information in the AGENTS schema.
