@@ -349,8 +349,6 @@ This means there are two valid discovery paths:
 
 The first path is the default and is what makes the Agents Schema self-describing. The second path exists for convenience and interoperability with tools that want to consume a stable schema without first reading provider-written descriptions.
 
-The well-known extension schemas below focus on provider-native columns. Tables whose rows are meant to be referenced directly can also be projected through `AGENTS.ENTITY`.
-
 ---
 
 ## Extension: `fivetran`
@@ -543,8 +541,6 @@ CREATE TABLE AGENTS.DBT_DEPENDENCY (
   PRIMARY KEY (upstream_id, downstream_id)
 );
 ```
-
-The natural key remains `(upstream_id, downstream_id)`. If this table is included in `AGENTS.ENTITY`, a specific lineage edge can be the target of memory, contribution metadata, or other annotations.
 
 To find all models that depend (directly or indirectly) on a source, agents can walk this table recursively using a CTE. Example:
 
@@ -775,12 +771,12 @@ CREATE TABLE AGENTS.DBT_SAVED_QUERY_ITEM (
 );
 ```
 
-This keeps saved queries queryable without baking every semantic-layer object into one opaque JSON blob.
+This keeps saved queries queryable without baking every semantic-layer concept into one opaque JSON blob.
 
 ### Why represent it this way?
 
 This shape preserves the same design choices used elsewhere in the Agents Schema:
-- one table per stable object
+- one table per stable concept
 - relational joins for the most common agent questions
 - `VARIANT` only where dbt's schema is genuinely polymorphic
 
