@@ -134,7 +134,6 @@ CREATE TABLE AGENTS.ROOT (
   provider        VARCHAR NOT NULL,  -- namespace, e.g. 'fivetran', 'dbt', 'acme_corp'
   key             VARCHAR NOT NULL,  -- provider-defined section identifier
   description     TEXT    NOT NULL,  -- markdown text describing this entry
-  provided_tables VARIANT,           -- optional structured list of tables exposed by this provider
   PRIMARY KEY (provider, key)
 );
 ```
@@ -146,7 +145,6 @@ CREATE TABLE AGENTS.ROOT (
 | `provider` | A short, lowercase identifier for the metadata contributor. Typically a vendor name (`fivetran`, `dbt`) or an internal team name (`acme_data_platform`). Must match the prefix used in any `AGENTS.{PROVIDER}_*` tables contributed by this provider. |
 | `key` | An arbitrary string chosen by the provider to organize their description into sections. Examples: `overview`, `connectors`, `lineage`, `costs`. Unique within a provider. |
 | `description` | A markdown blob. May describe the provider, explain an extension table, document conventions, or provide any context useful to an agent or human reader. Taken together, these rows document the rest of the schema. |
-| `provided_tables` | Optional structured list of tables exposed by this provider. Each entry should include `table_name` and `description`. |
 
 ### Example rows
 
@@ -158,21 +156,6 @@ fivetran   schema     See AGENTS.FIVETRAN_CONNECTOR and AGENTS.FIVETRAN_TABLE...
 dbt        overview   # dbt\nTransformation layer. See AGENTS.DBT_MODEL...
 dbt        lineage    Column-level lineage available in AGENTS.DBT_COLUMN_LINEAGE...
 acme_corp  costs      # Query Costs\nSee AGENTS.ACME_CORP_TABLE_COSTS...
-```
-
-A provider can use a `schema` row to make its table catalog machine-readable:
-
-```json
-[
-  {
-    "table_name": "AGENTS.DBT_MODEL",
-    "description": "dbt models with documentation, owner, materialization"
-  },
-  {
-    "table_name": "AGENTS.DBT_DEPENDENCY",
-    "description": "DAG edges for upstream/downstream lineage"
-  }
-]
 ```
 
 ---
@@ -361,7 +344,7 @@ If a provider-contributed table contains rows meant to be referenced through pol
 Well-known extensions are provider-contributed tables from specific vendors that tools may query directly — without reading `AGENTS.ROOT` first — because their schema is part of this specification. Providers should still register them in `AGENTS.ROOT`, but the schemas here are stable and publicly documented.
 
 This means there are two valid discovery paths:
-- generic discovery: start at `AGENTS.ROOT`, read provider descriptions and `provided_tables`, then inspect the referenced tables
+- generic discovery: start at `AGENTS.ROOT`, read provider descriptions, then inspect the referenced tables
 - shortcut discovery: if a tool already knows a well-known extension, it may query those tables directly
 
 The first path is the default and is what makes the Agents Schema self-describing. The second path exists for convenience and interoperability with tools that want to consume a stable schema without first reading provider-written descriptions.
