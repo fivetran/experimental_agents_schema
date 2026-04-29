@@ -131,9 +131,9 @@ The single entry point for all metadata. Every provider that contributes metadat
 
 ```sql
 CREATE TABLE AGENTS.ROOT (
-  provider        VARCHAR NOT NULL,  -- namespace, e.g. 'fivetran', 'dbt', 'acme_corp'
-  key             VARCHAR NOT NULL,  -- provider-defined section identifier
-  description     TEXT    NOT NULL,  -- markdown text describing this entry
+  provider    VARCHAR NOT NULL,  -- namespace, e.g. 'fivetran', 'dbt', 'acme_corp'
+  key         VARCHAR NOT NULL,  -- provider-defined section identifier
+  description TEXT    NOT NULL,  -- markdown text describing this entry
   PRIMARY KEY (provider, key)
 );
 ```
