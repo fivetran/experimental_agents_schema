@@ -131,9 +131,10 @@ The single entry point for all metadata. Every provider that contributes metadat
 
 ```sql
 CREATE TABLE AGENTS.ROOT (
-  provider    VARCHAR NOT NULL,  -- namespace, e.g. 'fivetran', 'dbt', 'acme_corp'
-  key         VARCHAR NOT NULL,  -- provider-defined section identifier
-  description TEXT    NOT NULL,  -- markdown text describing this entry
+  provider        VARCHAR NOT NULL,  -- namespace, e.g. 'fivetran', 'dbt', 'acme_corp'
+  key             VARCHAR NOT NULL,  -- provider-defined section identifier
+  description     TEXT    NOT NULL,  -- markdown text describing this entry
+  provided_tables VARIANT,           -- optional structured list of tables exposed by this provider
   PRIMARY KEY (provider, key)
 );
 ```
@@ -145,6 +146,7 @@ CREATE TABLE AGENTS.ROOT (
 | `provider` | A short, lowercase identifier for the metadata contributor. Typically a vendor name (`fivetran`, `dbt`) or an internal team name (`acme_data_platform`). Must match the prefix used in any `AGENTS.{PROVIDER}_*` tables contributed by this provider. |
 | `key` | An arbitrary string chosen by the provider to organize their description into sections. Examples: `overview`, `connectors`, `lineage`, `costs`. Unique within a provider. |
 | `description` | A markdown blob. May describe the provider, explain an extension table, document conventions, or provide any context useful to an agent or human reader. Taken together, these rows document the rest of the schema. |
+| `provided_tables` | Optional structured list of tables exposed by this provider. Each entry should include `table_name` and `description`. Entries whose rows can be referenced by URN should also include `urn_prefix`. |
 
 ### Example rows
 
@@ -157,6 +159,150 @@ dbt        overview   # dbt\nTransformation layer. See AGENTS.DBT_MODEL...
 dbt        lineage    Column-level lineage available in AGENTS.DBT_COLUMN_LINEAGE...
 acme_corp  costs      # Query Costs\nSee AGENTS.ACME_CORP_TABLE_COSTS...
 ```
+
+A provider can use a `schema` row to make its table catalog machine-readable:
+
+```json
+[
+  {
+    "table_name": "AGENTS.DBT_MODEL",
+    "description": "dbt models with documentation, owner, materialization",
+    "urn_prefix": "dbt:model:"
+  },
+  {
+    "table_name": "AGENTS.DBT_DEPENDENCY",
+    "description": "DAG edges for upstream/downstream lineage",
+    "urn_prefix": "dbt:dependency:"
+  }
+]
+```
+
+---
+
+## Cross-Cutting Identity
+
+Metadata objects that other tables may need to reference should have a stable, opaque URN in addition to their source-native natural key.
+
+Provider tables should keep their natural primary keys. For example, `AGENTS.DBT_MODEL.unique_id` remains the primary key for dbt models, and `AGENTS.FIVETRAN_CONNECTOR.connector_id` remains the primary key for Fivetran connectors. The `urn` column is an additional identity surface for cross-provider references and polymorphic attachments:
+
+```sql
+urn VARCHAR NOT NULL UNIQUE
+```
+
+When a table includes `urn`, providers should add it at the end of the table definition so the provider-native columns remain easy to read. Consumers should treat URNs as opaque strings after the registered prefix. The prefix is the dispatch key: `AGENTS.ROOT.provided_tables[*].urn_prefix` tells a consumer which table owns a URN.
+
+Addressability is a row-level capability, not a table category. A dbt model can be addressable, a dbt column can be addressable, and a lineage edge in `AGENTS.DBT_DEPENDENCY` can also be addressable if consumers may attach memory, provenance, or other annotations to that specific edge. Tables without `urn_prefix` are still discoverable through `AGENTS.ROOT`, but their rows are not part of the generic URN lookup surface.
+
+This is enough to support polymorphic extension tables without putting those tables in the core spec. For example, a memory can be associated with multiple rows by storing its body once and linking it to any number of URNs:
+
+```sql
+CREATE TABLE AGENTS.MEMORY (
+  memory_id   VARCHAR NOT NULL PRIMARY KEY,
+  memory_type VARCHAR NOT NULL, -- 'note', 'observation', 'warning', 'decision'
+  content     TEXT NOT NULL,
+  author      VARCHAR,
+  confidence  FLOAT,
+  evidence    VARIANT,
+  created_at  TIMESTAMP
+);
+
+CREATE TABLE AGENTS.MEMORY_TARGET (
+  memory_id   VARCHAR NOT NULL,
+  target_urn  VARCHAR NOT NULL,
+  target_role VARCHAR, -- 'subject', 'column', 'upstream', 'downstream', etc.
+  PRIMARY KEY (memory_id, target_urn)
+);
+```
+
+The target rows can live in completely different provider tables. One memory can refer to a dbt model, one of its columns, a lineage edge, and an upstream Fivetran connector without knowing any of those tables' natural-key shapes:
+
+```sql
+INSERT INTO AGENTS.MEMORY
+  (memory_id, memory_type, content, author, confidence, created_at)
+VALUES
+  (
+    'mem_001',
+    'observation',
+    'Revenue is reported in USD, depends on the Salesforce connector, and excludes refunds before 2023-Q1.',
+    'profiler-agent',
+    0.82,
+    CURRENT_TIMESTAMP
+  );
+
+INSERT INTO AGENTS.MEMORY_TARGET
+  (memory_id, target_urn, target_role)
+VALUES
+  ('mem_001', 'dbt:model:model.analytics.fct_revenue', 'subject'),
+  ('mem_001', 'dbt:column:model.analytics.fct_revenue:revenue_usd', 'column'),
+  ('mem_001', 'dbt:dependency:source.my_project.fivetran_salesforce.account:model.analytics.fct_revenue', 'lineage_edge'),
+  ('mem_001', 'fivetran:connector:salesforce_prod', 'upstream');
+```
+
+The write path does not need a `target_kind` column or a separate memory table per entity type. The URN is the polymorphic reference, and the same memory can attach to heterogeneous targets.
+
+Implementations may also expose an `AGENTS.ENTITY` view that projects every table with a registered `urn_prefix` onto a minimal common shape. This view is derived from `AGENTS.ROOT.provided_tables`; the exact `UNION ALL` branches depend on which providers are installed.
+
+```sql
+CREATE VIEW AGENTS.ENTITY AS
+SELECT urn, 'AGENTS.DBT_MODEL' AS table_name
+FROM AGENTS.DBT_MODEL
+UNION ALL
+SELECT urn, 'AGENTS.DBT_COLUMN' AS table_name
+FROM AGENTS.DBT_COLUMN
+UNION ALL
+SELECT urn, 'AGENTS.DBT_DEPENDENCY' AS table_name
+FROM AGENTS.DBT_DEPENDENCY
+UNION ALL
+SELECT urn, 'AGENTS.FIVETRAN_CONNECTOR' AS table_name
+FROM AGENTS.FIVETRAN_CONNECTOR;
+```
+
+This view is generated SQL, not something providers need to hand-maintain. A deployment step can read `AGENTS.ROOT.provided_tables`, select entries with `urn_prefix`, and render one branch per table. In dbt, for example, this can be installed as an `on-run-end` hook or macro that runs after provider metadata tables are created:
+
+```jinja
+{% macro create_agents_entity_view(provided_tables) %}
+  create or replace view AGENTS.ENTITY as
+  {%- for table in provided_tables if table.urn_prefix %}
+    {%- if not loop.first %} union all {% endif %}
+    select urn, '{{ table.table_name }}' as table_name
+    from {{ table.table_name }}
+  {%- endfor %}
+{% endmacro %}
+```
+
+The hook's input is the machine-readable registry already stored in `AGENTS.ROOT`, so adding a new provider table does not require rewriting consumer queries. It only requires updating that provider's `provided_tables` metadata and rerunning the view-generation step.
+
+With that view, reads work from either direction. To resolve every object associated with a memory:
+
+```sql
+SELECT
+  mt.target_role,
+  e.table_name AS target_table,
+  mt.target_urn
+FROM AGENTS.MEMORY_TARGET mt
+JOIN AGENTS.ENTITY e ON e.urn = mt.target_urn
+WHERE mt.memory_id = 'mem_001'
+ORDER BY mt.target_role, mt.target_urn;
+```
+
+To find every memory attached to a specific provider row, join that row's `urn` to `AGENTS.MEMORY_TARGET.target_urn`:
+
+```sql
+SELECT
+  m.memory_id,
+  m.memory_type,
+  m.content,
+  m.author,
+  mt.target_role,
+  mt.target_urn
+FROM AGENTS.DBT_MODEL model
+JOIN AGENTS.MEMORY_TARGET mt ON mt.target_urn = model.urn
+JOIN AGENTS.MEMORY m ON m.memory_id = mt.memory_id
+WHERE model.unique_id = 'model.analytics.fct_revenue'
+ORDER BY m.created_at DESC;
+```
+
+The first query does not need to know whether a memory points at a dbt model, a dbt column, a lineage edge, a Fivetran connector, or several of them at once. The second query uses the provider table's normal key to find the row, then switches to `urn` only for the polymorphic memory lookup. If a new provider later adds `AGENTS.LOOKER_DASHBOARD` rows with `urn` values and lists that table in `AGENTS.ROOT.provided_tables`, the `AGENTS.ENTITY` view can add one more branch and memory-to-target reads keep working unchanged.
 
 ---
 
@@ -172,6 +318,8 @@ The `PROVIDER` prefix must exactly match the `provider` value used in `AGENTS.RO
 
 **Example:** If `provider = 'acme_corp'`, contributed tables must be named `AGENTS.ACME_CORP_*`.
 
+If a provider-contributed table contains rows meant to be directly referenced or annotated, it should include `urn VARCHAR NOT NULL UNIQUE` and list its `urn_prefix` in `AGENTS.ROOT.provided_tables`. This can apply to object tables, relationship tables, logs, or event streams. Tables only need `urn` when their individual rows should be addressable.
+
 ---
 
 ## Well-Known Extensions
@@ -179,10 +327,12 @@ The `PROVIDER` prefix must exactly match the `provider` value used in `AGENTS.RO
 Well-known extensions are provider-contributed tables from specific vendors that tools may query directly — without reading `AGENTS.ROOT` first — because their schema is part of this specification. Providers should still register them in `AGENTS.ROOT`, but the schemas here are stable and publicly documented.
 
 This means there are two valid discovery paths:
-- generic discovery: start at `AGENTS.ROOT`, read provider descriptions, then inspect the referenced tables
+- generic discovery: start at `AGENTS.ROOT`, read provider descriptions and `provided_tables`, then inspect the referenced tables
 - shortcut discovery: if a tool already knows a well-known extension, it may query those tables directly
 
 The first path is the default and is what makes the Agents Schema self-describing. The second path exists for convenience and interoperability with tools that want to consume a stable schema without first reading provider-written descriptions.
+
+The well-known extension schemas below focus on provider-native columns. Tables whose rows are meant to be referenced directly also follow the `urn` convention above.
 
 ---
 
@@ -373,9 +523,12 @@ CREATE TABLE AGENTS.DBT_DEPENDENCY (
   downstream_id  VARCHAR NOT NULL,  -- unique_id of the downstream node
   upstream_type  VARCHAR NOT NULL,  -- 'model', 'source', 'seed', 'snapshot'
   downstream_type VARCHAR NOT NULL,
+  urn             VARCHAR NOT NULL UNIQUE, -- addressable ID for this lineage edge
   PRIMARY KEY (upstream_id, downstream_id)
 );
 ```
+
+The natural key remains `(upstream_id, downstream_id)`. The `urn` exists so a specific lineage edge can be the target of memory, contribution metadata, or other annotations.
 
 To find all models that depend (directly or indirectly) on a source, agents can walk this table recursively using a CTE. Example:
 
@@ -606,12 +759,12 @@ CREATE TABLE AGENTS.DBT_SAVED_QUERY_ITEM (
 );
 ```
 
-This keeps saved queries queryable without baking every semantic-layer concept into one opaque JSON blob.
+This keeps saved queries queryable without baking every semantic-layer object into one opaque JSON blob.
 
 ### Why represent it this way?
 
 This shape preserves the same design choices used elsewhere in the Agents Schema:
-- one table per stable concept
+- one table per stable object
 - relational joins for the most common agent questions
 - `VARIANT` only where dbt's schema is genuinely polymorphic
 
@@ -695,7 +848,15 @@ Agents Schema tables are typically populated by:
 
 ### Staleness
 
-Each extension table should ideally carry a `_synced_at` timestamp in a companion `AGENTS.{PROVIDER}_SYNC_STATUS` table or as a column on the table itself. Agents should check this before drawing conclusions about current state.
+Providers should expose freshness using provider-native fields where they have them, such as `last_synced_at`, or through a documented companion `AGENTS.{PROVIDER}_SYNC_STATUS` table. Agents should check freshness before drawing conclusions about current state.
+
+Providers may also expose catalog-row lifecycle and provenance fields when they can produce them accurately:
+- `_created_at`: when this catalog row first appeared
+- `_updated_at`: when this catalog row was last updated by the provider
+- `_deleted_at`: soft-delete timestamp; consumers should filter `_deleted_at IS NULL` when this column is present and they want current rows
+- `_contribution_id`: identifier for the sync, batch, deploy, or agent contribution that wrote the row
+
+These fields are operational metadata about the catalog row, not the source object. They are optional; providers should not invent them if they cannot maintain them correctly.
 
 ### Permissions
 
@@ -711,6 +872,14 @@ The following provider names are reserved by this specification:
 | `fivetran` | Fivetran Platform Connector extension (this spec) |
 | `dbt` | dbt manifest extension (this spec) |
 | `agents_schema` | Future use by the Agents Schema specification itself |
+
+Correspondingly, the following URN prefixes are reserved by this specification:
+
+| Prefix | Reserved for |
+|---|---|
+| `fivetran:` | Fivetran-authored metadata entities |
+| `dbt:` | dbt-authored metadata entities |
+| `agents_schema:` | Future use by the Agents Schema specification itself |
 
 ---
 
