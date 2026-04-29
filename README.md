@@ -870,6 +870,8 @@ Providers may also expose catalog-row lifecycle and provenance fields when they 
 
 These fields are operational metadata about the catalog row, not the source object. They are optional; providers should not invent them if they cannot maintain them correctly.
 
+Implementations that expose `AGENTS.ENTITY` may also project any available lifecycle fields there, such as `created_at`, `updated_at`, `deleted_at`, or `contribution_id`, when they want generic freshness or provenance checks across heterogeneous provider rows.
+
 ### Permissions
 
 - `AGENTS.ROOT` and all extension tables should be readable by any warehouse principal that runs analytical queries.
