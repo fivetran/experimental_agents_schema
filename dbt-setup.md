@@ -85,6 +85,27 @@ and create, load, query, update, and delete tables in the destination project.
 
 </details>
 
+<details>
+<summary>ClickHouse setup</summary>
+
+Use the HTTP interface host plus a user with rights on the `agents` database:
+
+```yaml
+type: clickhouse
+host: abc123.region.clickhouse.cloud
+port: 8443
+user: agents_schema_bot
+password: your-password
+secure: true
+```
+
+See [clickhouse-setup.md](clickhouse-setup.md) for grants, type mapping, and
+replicated-cluster notes. Managed dbt parse supports profiles with
+`type: clickhouse` (the [dbt-clickhouse](https://github.com/ClickHouse/dbt-clickhouse)
+adapter).
+
+</details>
+
 ## Run the dbt Sync Workflow
 
 In your dbt project repository, set up a new GitHub Workflow from the Actions tab. 

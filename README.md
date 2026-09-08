@@ -63,12 +63,15 @@ Supported destinations:
 - Snowflake
 - Databricks
 - BigQuery
+- ClickHouse ([destination notes](clickhouse-setup.md))
 
 ### Prerequisites
 
 Each workflow writes to your warehouse using a single GitHub Actions secret:
 `WAREHOUSE_CREDENTIALS`. Each source setup guide includes collapsible
-destination-specific examples for Snowflake, Databricks, and BigQuery.
+destination-specific examples for Snowflake, Databricks, BigQuery, and
+ClickHouse; [ClickHouse Setup](clickhouse-setup.md) has the ClickHouse
+credential shape and destination-specific mapping notes.
 
 ## Guides
 
@@ -108,7 +111,7 @@ and [examples/workflows/dbt-looker-osi.yml](examples/workflows/dbt-looker-osi.ym
 This repository is also a plugin marketplace for Codex and Claude Code. Its `agents-schema`
 plugin installs two independent skills before an agent connects to your warehouse:
 
-- `connect-warehouse` configures and verifies Snowflake, BigQuery, or Databricks access.
+- `connect-warehouse` configures and verifies Snowflake, BigQuery, Databricks, or ClickHouse access.
 - `agents-schema-search` discovers warehouse metadata through `AGENTS.ROOT` after a connection
   is available.
 

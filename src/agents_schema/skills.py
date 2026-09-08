@@ -69,6 +69,7 @@ _ANALYST_SKILL_FILES = {
     "databricks": "agents-schema-analyst-databricks.md",
     "bigquery": "agents-schema-analyst-bigquery.md",
     "big_query": "agents-schema-analyst-bigquery.md",
+    "clickhouse": "agents-schema-analyst-clickhouse.md",
 }
 
 

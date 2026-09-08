@@ -8,7 +8,7 @@ class ConfigError(Exception):
     """Raised when CLI arguments or environment settings are invalid."""
 
 
-SUPPORTED_WAREHOUSE_TYPES = {"big_query", "bigquery", "databricks", "snowflake"}
+SUPPORTED_WAREHOUSE_TYPES = {"big_query", "bigquery", "clickhouse", "databricks", "snowflake"}
 
 
 def warehouse_type(cfg: dict[str, Any]) -> str:

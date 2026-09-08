@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import unittest
 import sys
+import unittest
 from contextlib import contextmanager
-from types import ModuleType
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-from agents_schema.agents_schema_writer import BigQueryAgentsSchemaWriter, DatabricksAgentsSchemaWriter
+from agents_schema.agents_schema_writer import (
+    BigQueryAgentsSchemaWriter,
+    ClickHouseAgentsSchemaWriter,
+    DatabricksAgentsSchemaWriter,
+)
 from agents_schema.dbt import DBT_MODEL
 
 
@@ -166,6 +169,188 @@ class DatabricksAgentsSchemaWriterTests(unittest.TestCase):
         self.assertIn("DELETE FROM `agents`.`dbt_model` AS target", delete_sql)
         self.assertIn("target.`unique_id` = source.`unique_id`", delete_sql)
         self.assertEqual(params, ["model.pkg.orders"])
+
+
+class ClickHouseAgentsSchemaWriterTests(unittest.TestCase):
+    def test_replace_table_creates_mergetree_ordered_by_primary_key(self):
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls))
+
+        writer.replace_table(DBT_MODEL)
+
+        sqls = [call[1] for call in calls if call[0] == "command"]
+        self.assertTrue(sqls[0].startswith("SELECT count() FROM system.databases"))
+        self.assertEqual(sqls[1], "CREATE DATABASE IF NOT EXISTS `agents`")
+        create_sql = sqls[2]
+        self.assertIn("CREATE OR REPLACE TABLE `agents`.`dbt_model`", create_sql)
+        self.assertIn("`unique_id` String", create_sql)
+        self.assertIn("`description` Nullable(String)", create_sql)
+        self.assertIn("`tags` Array(String)", create_sql)
+        self.assertIn("`meta` JSON", create_sql)
+        self.assertIn("ENGINE = MergeTree ORDER BY (`unique_id`)", create_sql)
+
+    def test_upsert_rows_deletes_incoming_keys_then_inserts(self):
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls))
+
+        writer.upsert_rows(
+            DBT_MODEL,
+            [
+                ("model.pkg.orders", "orders", None, "analytics", "table", "", "models/orders.sql", [], {}),
+                ("model.pkg.customers", "customers", None, "analytics", "view", "desc", "models/customers.sql", ["mart"], {}),
+            ],
+        )
+
+        delete_calls = [call for call in calls if call[0] == "command" and call[1].startswith("DELETE")]
+        self.assertEqual(len(delete_calls), 1)
+        _, delete_sql, delete_settings, delete_params = delete_calls[0]
+        self.assertIn("DELETE FROM `agents`.`dbt_model`", delete_sql)
+        self.assertIn("`unique_id` IN {keys:Array(String)}", delete_sql)
+        self.assertEqual(delete_params, {"keys": ["model.pkg.orders", "model.pkg.customers"]})
+        self.assertEqual(delete_settings, {"lightweight_deletes_sync": 2})
+
+        insert_calls = [call for call in calls if call[0] == "insert"]
+        self.assertEqual(len(insert_calls), 1)
+        _, table, data, column_names, database = insert_calls[0]
+        self.assertEqual((database, table), ("agents", "dbt_model"))
+        self.assertEqual(column_names[0], "unique_id")
+        self.assertEqual(data[1][7], ["mart"])
+        self.assertEqual(data[0][8], "{}")
+        self.assertIsNone(data[0][2])
+        self.assertGreater(calls.index(insert_calls[0]), calls.index(delete_calls[0]))
+
+    def test_insert_rows_passes_values_as_data_not_sql(self):
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls))
+        tricky = "it's a \\ test with {id:UInt64}\nand a newline"
+
+        writer.insert_rows(
+            DBT_MODEL,
+            [("model.pkg.o", "o", None, "analytics", "table", tricky, "models/o.sql", [], {"a": 1})],
+        )
+
+        insert_calls = [call for call in calls if call[0] == "insert"]
+        self.assertEqual(len(insert_calls), 1)
+        _, _, data, _, _ = insert_calls[0]
+        self.assertEqual(data[0][5], tricky)
+        self.assertEqual(data[0][8], '{"a": 1}')
+
+    def test_reconcile_rows_deletes_absent_primary_keys(self):
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls))
+
+        writer.reconcile_rows(
+            DBT_MODEL,
+            [("model.pkg.orders", "orders", None, "analytics", "table", "", "models/orders.sql", [], {})],
+        )
+
+        absent_deletes = [call for call in calls if call[0] == "command" and "NOT (" in call[1]]
+        self.assertEqual(len(absent_deletes), 1)
+        _, sql, _, params = absent_deletes[0]
+        self.assertIn("NOT (`unique_id` IN {keys:Array(String)})", sql)
+        self.assertEqual(params, {"keys": ["model.pkg.orders"]})
+
+    def test_reconcile_rows_truncates_when_empty(self):
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls))
+
+        writer.reconcile_rows(DBT_MODEL, [])
+
+        self.assertIn(("command", "TRUNCATE TABLE `agents`.`dbt_model`", None, None), calls)
+
+    def test_multi_column_key_deletes_use_tuples(self):
+        from agents_schema.root import ROOT
+
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls))
+
+        writer.upsert_rows(ROOT, [("dbt", "overview", "# dbt")])
+
+        delete = next(call for call in calls if call[0] == "command" and call[1].startswith("DELETE"))
+        self.assertIn("(`provider`, `key`) IN {keys:Array(Tuple(String, String))}", delete[1])
+        self.assertEqual(delete[3], {"keys": [("dbt", "overview")]})
+
+    def test_json_columns_fall_back_to_string_before_25_3(self):
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls, server_version="24.8.1.1"))
+
+        writer.replace_table(DBT_MODEL)
+
+        create_sql = next(call[1] for call in calls if "CREATE OR REPLACE TABLE" in call[1])
+        self.assertIn("`meta` String", create_sql)
+        self.assertNotIn("`meta` JSON", create_sql)
+
+    def test_json_columns_fall_back_to_string_when_version_unknown(self):
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls, server_version=None))
+
+        writer.replace_table(DBT_MODEL)
+
+        create_sql = next(call[1] for call in calls if "CREATE OR REPLACE TABLE" in call[1])
+        self.assertIn("`meta` String", create_sql)
+        self.assertNotIn("`meta` JSON", create_sql)
+
+    def test_existing_database_is_not_recreated(self):
+        # CREATE DATABASE IF NOT EXISTS still requires the CREATE DATABASE
+        # grant when the database exists; the documented least-privilege user
+        # must be able to sync into an admin-created agents database.
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls, database_exists=True))
+
+        writer.replace_table(DBT_MODEL)
+        writer.ensure_table(DBT_MODEL)
+
+        sqls = [call[1] for call in calls if call[0] == "command"]
+        self.assertFalse(any(sql.startswith("CREATE DATABASE") for sql in sqls))
+        probes = [sql for sql in sqls if sql.startswith("SELECT count() FROM system.databases")]
+        self.assertEqual(len(probes), 1)
+
+    def test_array_values_preserve_object_and_string_shapes(self):
+        # OSI ai_context is a string OR an object (VARIANT on Snowflake); a
+        # non-list value must become a single element, never be iterated into
+        # dict keys or characters.
+        from agents_schema.osi import OSI_MODEL
+
+        calls = []
+        writer = ClickHouseAgentsSchemaWriter(_FakeClickHouseClient(calls))
+        structured = {"instructions": "Use amount_usd not amount for MRR.", "synonyms": ["mrr"]}
+
+        writer.insert_rows(
+            OSI_MODEL,
+            [
+                ("revenue", "1.0", "desc", ["mrr"], structured, None),
+                ("orders", "1.0", "desc", [], "prefer the signed-in customer grain", None),
+            ],
+        )
+
+        insert_calls = [call for call in calls if call[0] == "insert"]
+        self.assertEqual(len(insert_calls), 1)
+        data = insert_calls[0][2]
+        self.assertEqual(
+            data[0][4], ['{"instructions": "Use amount_usd not amount for MRR.", "synonyms": ["mrr"]}']
+        )
+        self.assertEqual(data[1][4], ["prefer the signed-in customer grain"])
+        self.assertEqual(data[1][5], [])
+
+
+class _FakeClickHouseClient:
+    def __init__(self, calls, server_version="26.1.1.1", database_exists=False):
+        self.calls = calls
+        self.database_exists = database_exists
+        if server_version is not None:
+            self.server_version = server_version
+
+    def command(self, sql, settings=None, parameters=None):
+        self.calls.append(("command", sql, settings, parameters))
+        if sql.startswith("SELECT count() FROM system.databases"):
+            return 1 if self.database_exists else 0
+        return None
+
+    def insert(self, table, data, column_names=None, database=None):
+        self.calls.append(("insert", table, data, column_names, database))
+
+    def close(self):
+        pass
 
 
 def _fake_connection(calls):

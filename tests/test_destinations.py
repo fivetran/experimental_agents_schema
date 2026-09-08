@@ -1,11 +1,14 @@
 import unittest
 from unittest.mock import patch
 
+from agents_schema.config import ConfigError
 from agents_schema.destinations import (
     BigQueryDestination,
+    ClickHouseDestination,
     DatabricksDestination,
     SnowflakeDestination,
     _bigquery_credentials_from_secret,
+    _clickhouse_connect_kwargs_from_secret,
     _create_table_if_not_exists_sql,
     _databricks_connect_kwargs_from_secret,
     _merge_sql,
@@ -110,6 +113,77 @@ class DestinationSqlTests(unittest.TestCase):
     def test_open_destination_supports_databricks(self):
         with patch("agents_schema.destinations.DatabricksDestination") as destination:
             result = open_destination({"warehouse": {"type": "databricks"}})
+
+        self.assertIs(result, destination.return_value)
+
+    def test_clickhouse_credentials_apply_defaults(self):
+        kwargs = _clickhouse_connect_kwargs_from_secret(
+            {"type": "clickhouse", "host": "abc.clickhouse.cloud"}
+        )
+
+        self.assertEqual(
+            kwargs,
+            {
+                "host": "abc.clickhouse.cloud",
+                "username": "default",
+                "password": "",
+                "secure": True,
+            },
+        )
+
+    def test_clickhouse_credentials_accept_user_alias_port_and_plain_http(self):
+        kwargs = _clickhouse_connect_kwargs_from_secret(
+            {
+                "type": "clickhouse",
+                "host": "localhost",
+                "username": "bot",
+                "password": "pw",
+                "port": "8123",
+                "secure": False,
+            }
+        )
+
+        self.assertEqual(kwargs["username"], "bot")
+        self.assertEqual(kwargs["port"], 8123)
+        self.assertFalse(kwargs["secure"])
+
+    def test_clickhouse_credentials_parse_string_booleans_strictly(self):
+        kwargs = _clickhouse_connect_kwargs_from_secret(
+            {"type": "clickhouse", "host": "localhost", "password": "pw", "secure": "false"}
+        )
+        self.assertFalse(kwargs["secure"])
+
+        with self.assertRaises(ConfigError):
+            _clickhouse_connect_kwargs_from_secret(
+                {"type": "clickhouse", "host": "localhost", "password": "pw", "secure": "maybe"}
+            )
+
+        with self.assertRaises(ConfigError):
+            _clickhouse_connect_kwargs_from_secret(
+                {"type": "clickhouse", "host": "localhost", "password": "pw", "secure": 1}
+            )
+
+    def test_clickhouse_credentials_validate_port(self):
+        for port in (0, 65536, "not-a-port", 8123.5, True):
+            with self.subTest(port=port), self.assertRaises(ConfigError):
+                _clickhouse_connect_kwargs_from_secret(
+                    {"type": "clickhouse", "host": "localhost", "port": port}
+                )
+
+    def test_clickhouse_credentials_require_host(self):
+        with self.assertRaises(ConfigError):
+            _clickhouse_connect_kwargs_from_secret({"type": "clickhouse", "password": "pw"})
+
+    def test_clickhouse_destination_accepts_explicit_client(self):
+        client = object()
+
+        dest = ClickHouseDestination(client=client)
+
+        self.assertIs(dest._client, client)
+
+    def test_open_destination_supports_clickhouse(self):
+        with patch("agents_schema.destinations.ClickHouseDestination") as destination:
+            result = open_destination({"warehouse": {"type": "clickhouse"}})
 
         self.assertIs(result, destination.return_value)
 

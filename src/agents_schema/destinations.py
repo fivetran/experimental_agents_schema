@@ -11,6 +11,7 @@ import yaml
 from .agents_schema_writer import (
     AgentsSchemaWriter,
     BigQueryAgentsSchemaWriter,
+    ClickHouseAgentsSchemaWriter,
     Column,
     DatabricksAgentsSchemaWriter,
     SnowflakeAgentsSchemaWriter,
@@ -24,7 +25,7 @@ from .agents_schema_writer.snowflake import (
     _merge_sql,
     load_private_key,
 )
-from .config import ConfigError, SUPPORTED_WAREHOUSE_TYPES, warehouse_type
+from .config import SUPPORTED_WAREHOUSE_TYPES, ConfigError, warehouse_type
 
 Destination = AgentsSchemaWriter
 
@@ -61,6 +62,22 @@ class DatabricksDestination(DatabricksAgentsSchemaWriter):
         super().__init__(databricks.sql.connect(**connect_kwargs))
 
 
+class ClickHouseDestination(ClickHouseAgentsSchemaWriter):
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        client: Any | None = None,
+    ) -> None:
+        if client is None:
+            import clickhouse_connect
+
+            if config is None:
+                raise ConfigError("ClickHouseDestination requires config or client")
+            client = clickhouse_connect.get_client(**_clickhouse_connect_kwargs(config))
+        super().__init__(client)
+
+
 class BigQueryDestination(BigQueryAgentsSchemaWriter):
     def __init__(
         self,
@@ -94,6 +111,8 @@ def open_destination(cfg: dict[str, Any]) -> Destination:
         return DatabricksDestination(cfg)
     if dest_type in {"bigquery", "big_query"}:
         return BigQueryDestination(cfg)
+    if dest_type == "clickhouse":
+        return ClickHouseDestination(cfg)
     raise ConfigError(f"unsupported destination type: {dest_type}")
 
 
@@ -209,6 +228,57 @@ def _databricks_connect_kwargs_from_secret(destination: dict[str, Any]) -> dict[
     }
 
 
+def _clickhouse_connect_kwargs(cfg: dict[str, Any]) -> dict[str, Any]:
+    destination = warehouse_credentials_from_env()
+    if destination.get("type") != "clickhouse":
+        raise ConfigError("WAREHOUSE_CREDENTIALS.type must be clickhouse")
+    return _clickhouse_connect_kwargs_from_secret(destination)
+
+
+def _clickhouse_connect_kwargs_from_secret(destination: dict[str, Any]) -> dict[str, Any]:
+    host = destination.get("host")
+    if not isinstance(host, str) or not host.strip():
+        raise ConfigError("WAREHOUSE_CREDENTIALS missing keys: host")
+
+    secure = destination.get("secure")
+    if secure is None:
+        secure = True
+    elif isinstance(secure, str):
+        lowered = secure.strip().lower()
+        if lowered in {"true", "1", "yes"}:
+            secure = True
+        elif lowered in {"false", "0", "no"}:
+            secure = False
+        else:
+            raise ConfigError(f"WAREHOUSE_CREDENTIALS.secure must be a boolean, got {secure!r}")
+    elif not isinstance(secure, bool):
+        raise ConfigError(f"WAREHOUSE_CREDENTIALS.secure must be a boolean, got {secure!r}")
+    kwargs: dict[str, Any] = {
+        "host": host.strip(),
+        "username": destination.get("user") or destination.get("username") or "default",
+        "password": destination.get("password") or "",
+        "secure": secure,
+    }
+    port = destination.get("port")
+    if port is not None:
+        if isinstance(port, bool) or not isinstance(port, (int, str)):
+            raise ConfigError(
+                f"WAREHOUSE_CREDENTIALS.port must be an integer from 1 to 65535, got {port!r}"
+            )
+        try:
+            parsed_port = int(port)
+        except ValueError as e:
+            raise ConfigError(
+                f"WAREHOUSE_CREDENTIALS.port must be an integer from 1 to 65535, got {port!r}"
+            ) from e
+        if not 1 <= parsed_port <= 65535:
+            raise ConfigError(
+                f"WAREHOUSE_CREDENTIALS.port must be an integer from 1 to 65535, got {port!r}"
+            )
+        kwargs["port"] = parsed_port
+    return kwargs
+
+
 def _bigquery_credentials(cfg: dict[str, Any]) -> tuple[dict[str, Any], str, str | None]:
     destination = warehouse_credentials_from_env()
     if destination.get("type") not in {"bigquery", "big_query"}:
@@ -266,12 +336,14 @@ def _optional_string(value: object) -> str | None:
 
 __all__ = [
     "BigQueryDestination",
+    "ClickHouseDestination",
     "Column",
     "DatabricksDestination",
     "Destination",
     "SnowflakeDestination",
     "TableSchema",
     "_bigquery_credentials_from_secret",
+    "_clickhouse_connect_kwargs_from_secret",
     "_create_table_if_not_exists_sql",
     "_create_table_sql",
     "_databricks_connect_kwargs_from_secret",

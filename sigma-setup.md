@@ -85,6 +85,25 @@ and create, load, query, update, and delete tables in the destination project.
 
 </details>
 
+<details>
+<summary>ClickHouse setup</summary>
+
+Use the HTTP interface host plus a user with rights on the `agents` database:
+
+```yaml
+type: clickhouse
+host: abc123.region.clickhouse.cloud
+port: 8443
+user: agents_schema_bot
+password: your-password
+secure: true
+```
+
+See [clickhouse-setup.md](clickhouse-setup.md) for grants, type mapping, and
+replicated-cluster notes.
+
+</details>
+
 ## Obtain Sigma Data Model YAML Files
 
 Sigma data model YAML files are obtained from the Sigma REST API using the

@@ -22,6 +22,8 @@ class DbtProfilesTests(unittest.TestCase):
                           type: databricks
                         bigquery:
                           type: bigquery
+                        clickhouse:
+                          type: clickhouse
                     """
                 ).strip()
             )
@@ -37,6 +39,10 @@ class DbtProfilesTests(unittest.TestCase):
             self.assertEqual(
                 dbt_adapter_package_from_profiles_file(profiles_path, "analytics", "bigquery"),
                 "dbt-bigquery",
+            )
+            self.assertEqual(
+                dbt_adapter_package_from_profiles_file(profiles_path, "analytics", "clickhouse"),
+                "dbt-clickhouse",
             )
 
     def test_adapter_package_normalizes_profile_type_case(self):
@@ -76,7 +82,7 @@ class DbtProfilesTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ConfigError,
-                "supported types: bigquery, databricks, snowflake",
+                "supported types: bigquery, clickhouse, databricks, snowflake",
             ):
                 dbt_adapter_package_from_profiles_file(profiles_path, "analytics")
 
