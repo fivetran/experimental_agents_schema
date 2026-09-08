@@ -2,9 +2,10 @@
 
 Use the clickhouse-connect driver over the HTTP interface.
 
-1. Read `host`, `port`, `user`, `password`, and `secure` from `agents.yml`. Ask the user to add
-   any missing value without pasting secrets into chat. `port` defaults to 8443 when `secure`
-   is true and 8123 otherwise; `user` defaults to `default`.
+1. Read the required `host` and optional `port`, `user`, `password`, and `secure` values from
+   `agents.yml`. Ask the user to add `host` if it is missing without pasting secrets into chat.
+   `port` defaults to 8443 when `secure` is true and 8123 otherwise; `user` defaults to
+   `default`, and `password` defaults to an empty string for passwordless deployments.
 2. Install `clickhouse-connect` when `clickhouse_connect` is unavailable.
 3. Verify the connection by replacing `<SQL>` with `SELECT 1`:
 
@@ -30,14 +31,17 @@ Use the clickhouse-connect driver over the HTTP interface.
        host=cfg["host"],
        port=cfg.get("port"),
        username=cfg.get("user", "default"),
-       password=cfg["password"],
+       password=cfg.get("password", ""),
        secure=secure,
    )
-   result = client.query("""
+   try:
+       result = client.query("""
    <SQL>
-   """)
-   rows = [dict(zip(result.column_names, row)) for row in result.result_rows]
-   print(json.dumps(rows, indent=2, default=str))
+       """)
+       rows = [dict(zip(result.column_names, row)) for row in result.result_rows]
+       print(json.dumps(rows, indent=2, default=str))
+   finally:
+       client.close()
    PYEOF
    ```
 

@@ -78,8 +78,12 @@ idempotent). Treat the tables as generated metadata, not hand-edited state.
 - **ClickHouse Cloud:** works out of the box — Cloud internally rewrites
   `MergeTree` DDL to `SharedMergeTree`, so both metadata and data are shared by
   all nodes.
-- **Self-hosted single node:** works out of the box on the default `Atomic`
-  database engine.
+- **Self-hosted single node:** works on the default `Atomic` database engine
+  when the ClickHouse data filesystem supports atomic exchange via
+  `renameat2(RENAME_EXCHANGE)`, which `CREATE OR REPLACE TABLE` requires. Some
+  network and FUSE filesystems, including NFS/EFS and CephFS, do not support
+  this operation; use supported local storage or see
+  [ClickHouse issue #96835](https://github.com/ClickHouse/ClickHouse/issues/96835).
 - **Self-hosted replicated clusters:** the writer creates plain `MergeTree`
   tables, so table **data lives only on the node the sync connects to** (a
   `Replicated` database engine would replicate DDL, not MergeTree data). Point

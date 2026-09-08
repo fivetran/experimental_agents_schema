@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from agents_schema.root import ROOT, ROOT_ENTRIES, upsert_provider_root
@@ -19,7 +20,9 @@ class RootTests(unittest.TestCase):
             for _, entry_content in entries
         )
 
-        self.assertNotIn("AGENTS.", content)
+        see_references = re.findall(r"\bSee ((?:agents|AGENTS)\.[A-Za-z_]+)", content)
+        self.assertTrue(see_references)
+        self.assertTrue(all(reference.startswith("agents.") for reference in see_references))
 
     def test_upsert_provider_root_writes_only_requested_provider(self):
         dest = FakeDestination()

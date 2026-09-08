@@ -26,12 +26,13 @@ statements only.
 Required first query:
 
 ```sql
-SELECT * FROM AGENTS.ROOT ORDER BY provider, key;
+SELECT * FROM agents.root ORDER BY provider, key;
 ```
 
-On ClickHouse, identifiers are case-sensitive and the schema is a lowercase
-database — use `SELECT * FROM agents.root ORDER BY provider, key;` (the same
-applies to the provider tables: `agents.dbt_model`, not `AGENTS.DBT_MODEL`).
+These are the canonical physical names created by the package. Lowercase is
+required on case-sensitive destinations such as ClickHouse and BigQuery and is
+also accepted by Snowflake and Databricks. Use lowercase for provider tables as
+well, for example `agents.dbt_model`.
 
 Then follow the provider guidance returned in the `content` column.
 

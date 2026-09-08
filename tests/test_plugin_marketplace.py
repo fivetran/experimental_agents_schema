@@ -2,7 +2,6 @@ import json
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MARKETPLACE_PATH = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
 CLAUDE_MARKETPLACE_PATH = REPO_ROOT / ".claude-plugin" / "marketplace.json"
@@ -30,13 +29,18 @@ class PluginMarketplaceTests(unittest.TestCase):
 
         self.assertEqual(skill_names, {"agents-schema-search", "connect-warehouse"})
         schema_skill = (skill_root / "agents-schema-search" / "SKILL.md").read_text()
-        self.assertIn("SELECT * FROM AGENTS.ROOT ORDER BY provider, key;", schema_skill)
+        self.assertIn("SELECT * FROM agents.root ORDER BY provider, key;", schema_skill)
+        self.assertNotIn("SELECT * FROM AGENTS.ROOT ORDER BY provider, key;", schema_skill)
         connection_references = {
             path.stem for path in (skill_root / "connect-warehouse" / "references").glob("*.md")
         }
         self.assertEqual(
             connection_references, {"snowflake", "bigquery", "databricks", "clickhouse"}
         )
+        clickhouse_reference = (
+            skill_root / "connect-warehouse" / "references" / "clickhouse.md"
+        ).read_text()
+        self.assertIn('password=cfg.get("password", "")', clickhouse_reference)
 
     def test_claude_marketplace_installs_same_plugin(self):
         marketplace = json.loads(CLAUDE_MARKETPLACE_PATH.read_text())

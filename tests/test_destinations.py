@@ -118,7 +118,7 @@ class DestinationSqlTests(unittest.TestCase):
 
     def test_clickhouse_credentials_apply_defaults(self):
         kwargs = _clickhouse_connect_kwargs_from_secret(
-            {"type": "clickhouse", "host": "abc.clickhouse.cloud", "password": "pw"}
+            {"type": "clickhouse", "host": "abc.clickhouse.cloud"}
         )
 
         self.assertEqual(
@@ -126,7 +126,7 @@ class DestinationSqlTests(unittest.TestCase):
             {
                 "host": "abc.clickhouse.cloud",
                 "username": "default",
-                "password": "pw",
+                "password": "",
                 "secure": True,
             },
         )
