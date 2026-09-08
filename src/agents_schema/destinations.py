@@ -25,7 +25,7 @@ from .agents_schema_writer.snowflake import (
     _merge_sql,
     load_private_key,
 )
-from .config import ConfigError, SUPPORTED_WAREHOUSE_TYPES, warehouse_type
+from .config import SUPPORTED_WAREHOUSE_TYPES, ConfigError, warehouse_type
 
 Destination = AgentsSchemaWriter
 
@@ -237,7 +237,7 @@ def _clickhouse_connect_kwargs(cfg: dict[str, Any]) -> dict[str, Any]:
 
 def _clickhouse_connect_kwargs_from_secret(destination: dict[str, Any]) -> dict[str, Any]:
     host = destination.get("host")
-    if not host:
+    if not isinstance(host, str) or not host.strip():
         raise ConfigError("WAREHOUSE_CREDENTIALS missing keys: host")
 
     secure = destination.get("secure")
@@ -251,14 +251,31 @@ def _clickhouse_connect_kwargs_from_secret(destination: dict[str, Any]) -> dict[
             secure = False
         else:
             raise ConfigError(f"WAREHOUSE_CREDENTIALS.secure must be a boolean, got {secure!r}")
+    elif not isinstance(secure, bool):
+        raise ConfigError(f"WAREHOUSE_CREDENTIALS.secure must be a boolean, got {secure!r}")
     kwargs: dict[str, Any] = {
-        "host": host,
+        "host": host.strip(),
         "username": destination.get("user") or destination.get("username") or "default",
         "password": destination.get("password") or "",
-        "secure": bool(secure),
+        "secure": secure,
     }
-    if port := destination.get("port"):
-        kwargs["port"] = int(port)
+    port = destination.get("port")
+    if port is not None:
+        if isinstance(port, bool) or not isinstance(port, (int, str)):
+            raise ConfigError(
+                f"WAREHOUSE_CREDENTIALS.port must be an integer from 1 to 65535, got {port!r}"
+            )
+        try:
+            parsed_port = int(port)
+        except ValueError as e:
+            raise ConfigError(
+                f"WAREHOUSE_CREDENTIALS.port must be an integer from 1 to 65535, got {port!r}"
+            ) from e
+        if not 1 <= parsed_port <= 65535:
+            raise ConfigError(
+                f"WAREHOUSE_CREDENTIALS.port must be an integer from 1 to 65535, got {port!r}"
+            )
+        kwargs["port"] = parsed_port
     return kwargs
 
 

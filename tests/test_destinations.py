@@ -4,6 +4,7 @@ from unittest.mock import patch
 from agents_schema.config import ConfigError
 from agents_schema.destinations import (
     BigQueryDestination,
+    ClickHouseDestination,
     DatabricksDestination,
     SnowflakeDestination,
     _bigquery_credentials_from_secret,
@@ -157,9 +158,28 @@ class DestinationSqlTests(unittest.TestCase):
                 {"type": "clickhouse", "host": "localhost", "password": "pw", "secure": "maybe"}
             )
 
+        with self.assertRaises(ConfigError):
+            _clickhouse_connect_kwargs_from_secret(
+                {"type": "clickhouse", "host": "localhost", "password": "pw", "secure": 1}
+            )
+
+    def test_clickhouse_credentials_validate_port(self):
+        for port in (0, 65536, "not-a-port", 8123.5, True):
+            with self.subTest(port=port), self.assertRaises(ConfigError):
+                _clickhouse_connect_kwargs_from_secret(
+                    {"type": "clickhouse", "host": "localhost", "port": port}
+                )
+
     def test_clickhouse_credentials_require_host(self):
         with self.assertRaises(ConfigError):
             _clickhouse_connect_kwargs_from_secret({"type": "clickhouse", "password": "pw"})
+
+    def test_clickhouse_destination_accepts_explicit_client(self):
+        client = object()
+
+        dest = ClickHouseDestination(client=client)
+
+        self.assertIs(dest._client, client)
 
     def test_open_destination_supports_clickhouse(self):
         with patch("agents_schema.destinations.ClickHouseDestination") as destination:

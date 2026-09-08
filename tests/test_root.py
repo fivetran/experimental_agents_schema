@@ -1,6 +1,6 @@
 import unittest
 
-from agents_schema.root import ROOT, upsert_provider_root
+from agents_schema.root import ROOT, ROOT_ENTRIES, upsert_provider_root
 
 
 class FakeDestination:
@@ -12,6 +12,15 @@ class FakeDestination:
 
 
 class RootTests(unittest.TestCase):
+    def test_root_content_uses_portable_canonical_table_names(self):
+        content = "\n".join(
+            entry_content
+            for entries in ROOT_ENTRIES.values()
+            for _, entry_content in entries
+        )
+
+        self.assertNotIn("AGENTS.", content)
+
     def test_upsert_provider_root_writes_only_requested_provider(self):
         dest = FakeDestination()
 

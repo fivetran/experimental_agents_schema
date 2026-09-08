@@ -22,10 +22,15 @@ grant the sync user rights only inside it:
 ```sql
 CREATE DATABASE IF NOT EXISTS agents;
 GRANT CREATE TABLE, DROP TABLE, TRUNCATE, SELECT, INSERT, ALTER DELETE, ALTER UPDATE ON agents.* TO agents_schema_bot;
+GRANT TABLE ENGINE ON MergeTree TO agents_schema_bot;
 ```
 
 (`ALTER UPDATE` is required alongside `ALTER DELETE` because lightweight
 deletes are executed as an update of the internal `_row_exists` column.)
+
+(`TABLE ENGINE ON MergeTree` allows the sync user to create the package's
+`MergeTree` tables. Recent ClickHouse versions check this separately from the
+`CREATE TABLE` privilege.)
 
 (The writer checks `system.databases` first and only issues
 `CREATE DATABASE IF NOT EXISTS agents` when the database is missing — in

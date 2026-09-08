@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import unittest
 import sys
+import unittest
 from contextlib import contextmanager
-from types import ModuleType
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 from agents_schema.agents_schema_writer import (

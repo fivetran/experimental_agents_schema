@@ -14,13 +14,24 @@ Use the clickhouse-connect driver over the HTTP interface.
    import clickhouse_connect
    import yaml
 
-   cfg = yaml.safe_load(open("agents.yml"))
+   with open("agents.yml") as config_file:
+       cfg = yaml.safe_load(config_file)
+   secure = cfg.get("secure", True)
+   if isinstance(secure, str):
+       values = {"true": True, "1": True, "yes": True,
+                 "false": False, "0": False, "no": False}
+       try:
+           secure = values[secure.strip().lower()]
+       except KeyError as exc:
+           raise ValueError("agents.yml secure must be true or false") from exc
+   if not isinstance(secure, bool):
+       raise ValueError("agents.yml secure must be true or false")
    client = clickhouse_connect.get_client(
        host=cfg["host"],
        port=cfg.get("port"),
        username=cfg.get("user", "default"),
        password=cfg["password"],
-       secure=cfg.get("secure", True),
+       secure=secure,
    )
    result = client.query("""
    <SQL>
