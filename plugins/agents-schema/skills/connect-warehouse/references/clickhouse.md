@@ -18,15 +18,9 @@ Use the clickhouse-connect driver over the HTTP interface.
    with open("agents.yml") as config_file:
        cfg = yaml.safe_load(config_file)
    secure = cfg.get("secure", True)
-   if isinstance(secure, str):
-       values = {"true": True, "1": True, "yes": True,
-                 "false": False, "0": False, "no": False}
-       try:
-           secure = values[secure.strip().lower()]
-       except KeyError as exc:
-           raise ValueError("agents.yml secure must be true or false") from exc
-   if not isinstance(secure, bool):
-       raise ValueError("agents.yml secure must be true or false")
+   if isinstance(secure, str):  # quoted values only; YAML `secure: false` is already a bool
+       secure = {"true": True, "yes": True, "1": True,
+                 "false": False, "no": False, "0": False}[secure.strip().lower()]
    client = clickhouse_connect.get_client(
        host=cfg["host"],
        port=cfg.get("port"),

@@ -22,15 +22,17 @@ grant the sync user rights only inside it:
 ```sql
 CREATE DATABASE IF NOT EXISTS agents;
 GRANT CREATE TABLE, DROP TABLE, TRUNCATE, SELECT, INSERT, ALTER DELETE, ALTER UPDATE ON agents.* TO agents_schema_bot;
+-- Only if the server sets table_engines_require_grant = true (off by default):
 GRANT TABLE ENGINE ON MergeTree TO agents_schema_bot;
 ```
 
 (`ALTER UPDATE` is required alongside `ALTER DELETE` because lightweight
 deletes are executed as an update of the internal `_row_exists` column.)
 
-(`TABLE ENGINE ON MergeTree` allows the sync user to create the package's
-`MergeTree` tables. Recent ClickHouse versions check this separately from the
-`CREATE TABLE` privilege.)
+(`TABLE ENGINE` privileges are only enforced when `config.xml` sets
+`<access_control_improvements><table_engines_require_grant>true</...>`. The
+default is `false`, and ClickHouse Cloud does not enable it, so most
+deployments can skip that line; granting it anyway is harmless.)
 
 (The writer checks `system.databases` first and only issues
 `CREATE DATABASE IF NOT EXISTS agents` when the database is missing — in
